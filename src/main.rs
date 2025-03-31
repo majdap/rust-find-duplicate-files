@@ -6,8 +6,8 @@ use walkdir::WalkDir;
 
 const DEFAULTS: [&str; 3] = ["index.ts", "routes.ts", "types.ts"];
 enum FLAGS {
-    Help = "--help" | "-h",
-    IgnoreDefaults = "--ignore-defaults" | "-i",
+    Help,
+    Ignore,
 }
 
 fn main() {
@@ -21,11 +21,11 @@ fn main() {
     let mut ignore_defaults = false;
     for flag in flags {
         match flag.as_str() {
-            FLAGS::Help => {
+            "--help" | "-h" => {
                 println!("Ask sham lol");
                 return;
             }
-            FLAGS::IgnoreDefaults => {
+            "--ignore-defaults" | "-i" => {
                 ignore_defaults = true;
             }
             _ => {}
@@ -72,4 +72,15 @@ fn parse_file_name(file_name: &str) -> Option<&str> {
         // If no match, return an empty string
         return None;
     }
+}
+
+fn read_lines(file_name: &str) -> Vec<String> {
+    use std::fs::File;
+    use std::io::{self, BufRead};
+    let file = File::open(file_name).expect("Unable to open file");
+    let reader = io::BufReader::new(file);
+    reader
+        .lines()
+        .map(|line| line.expect("Unable to read line"))
+        .collect()
 }
