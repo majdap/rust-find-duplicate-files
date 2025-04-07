@@ -1,86 +1,144 @@
 extern crate walkdir;
+use clap::{Arg, ArgAction, Command};
 use regex::Regex;
 use std::collections::HashMap;
-use std::env;
+use std::fs::File;
+use std::io::{self, BufRead};
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use walkdir::WalkDir;
 
-const DEFAULTS: [&str; 3] = ["index.ts", "routes.ts", "types.ts"];
-enum FLAGS {
-    Help,
-    Ignore,
+// Use OnceLock for the compiled regex pattern to avoid recompilation
+static FILE_NAME_REGEX: OnceLock<Regex> = OnceLock::new();
+
+fn get_filename_regex() -> &'static Regex {
+    FILE_NAME_REGEX.get_or_init(|| Regex::new(r"([^/\\]*$)").unwrap())
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        println!("Usage: rust_duplicate_files <path>");
+    // Define command line interface
+    let matches = Command::new("rust_duplicate_files")
+        .version("1.0")
+        .author("majdap")
+        .about("Find duplicate files in a directory")
+        .arg(
+            Arg::new("path")
+                .help("The directory path to search for duplicates")
+                .required(true)
+                .index(1)
+                .value_parser(clap::value_parser!(PathBuf)),
+        )
+        .arg(
+            Arg::new("ignore-from-file")
+                .short('i')
+                .long("ignore-from-file")
+                .help("Path to file with items to ignore (one per line)")
+                .value_name("FILE")
+                .value_parser(clap::value_parser!(PathBuf))
+                .action(ArgAction::Set),
+        )
+        .get_matches();
+
+    // Get the directory path to search
+    let path = matches.get_one::<PathBuf>("path").unwrap();
+
+    // Process ignore file if provided
+    let ignored_file_names =
+        if let Some(ignore_file) = matches.get_one::<PathBuf>("ignore-from-file") {
+            println!("Loading ignore patterns from: {}", ignore_file.display());
+
+            match read_lines(ignore_file) {
+                Ok(lines) => lines.flatten().collect::<Vec<String>>(),
+                Err(e) => {
+                    eprintln!("Error reading ignore file: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            Vec::new()
+        };
+
+    // Find and analyze files
+    let duplicate_files = find_duplicate_files(path, &ignored_file_names);
+
+    // Print results
+    print_duplicates(&duplicate_files);
+}
+
+fn find_duplicate_files(
+    path: &Path,
+    ignored_file_names: &[String],
+) -> HashMap<String, Vec<String>> {
+    let mut files_hash: HashMap<String, Vec<String>> = HashMap::new();
+
+    // Walk the directory tree
+    for file in WalkDir::new(path)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_file())
+    {
+        // Only process files, not directories
+
+        let file_path = file.path().to_string_lossy().to_string();
+
+        // Skip if the file path is in the ignore list
+        if ignored_file_names
+            .iter()
+            .any(|pattern| file_path.contains(pattern))
+        {
+            continue;
+        }
+
+        if let Some(file_name) = parse_file_name(&file_path) {
+            // Skip default files if ignore_defaults is true
+
+            files_hash
+                .entry(file_name.to_string())
+                .or_insert_with(Vec::new)
+                .push(file_path);
+        }
+    }
+
+    // Filter out entries with only one file (not duplicates)
+    files_hash.retain(|_, paths| paths.len() > 1);
+
+    files_hash
+}
+
+fn print_duplicates(duplicates: &HashMap<String, Vec<String>>) {
+    if duplicates.is_empty() {
+        println!("No duplicate files found.");
         return;
     }
-    let path = args[1].clone();
-    let flags = &args[2..];
-    let mut ignore_defaults = false;
-    for flag in flags {
-        match flag.as_str() {
-            "--help" | "-h" => {
-                println!("Ask sham lol");
-                return;
-            }
-            "--ignore-defaults" | "-i" => {
-                ignore_defaults = true;
-            }
-            _ => {}
-        }
-    }
-    let mut files_hash: HashMap<String, Vec<String>> = HashMap::new();
-    for file in WalkDir::new(path).into_iter().filter_map(|file| file.ok()) {
-        let file_name = file.path().to_string_lossy().to_string();
-        let parsed_name = parse_file_name(&file_name);
-        match parsed_name {
-            Some(name) => {
-                if DEFAULTS.contains(&name) && ignore_defaults {
-                    continue;
-                }
-                let key = name.to_string();
-                let entry = files_hash.entry(key).or_insert_with(Vec::new);
-                entry.push(file_name);
-            }
-            None => {}
-        }
-    }
 
-    for (key, value) in &files_hash {
-        if value.len() > 1 {
-            println!("{}: ", key);
-            for filepath in value {
-                println!("{}, ", filepath);
-            }
-            print!("\n");
+    println!("Found {} sets of duplicate files:", duplicates.len());
+
+    for (file_name, paths) in duplicates {
+        println!("File: {}", file_name);
+        for path in paths {
+            println!("  - {}", path);
         }
+        println!();
     }
 }
 
-fn parse_file_name(file_name: &str) -> Option<&str> {
-    let re = Regex::new(r"([^/\\]*$)").unwrap();
-    if let Some(caps) = re.captures(file_name) {
-        // Return the first capture group
-        let capture: &str = caps.get(1).map_or("", |m| m.as_str());
-        if !capture.contains(".") {
-            return None;
+fn parse_file_name(file_path: &str) -> Option<&str> {
+    let re = get_filename_regex();
+
+    re.captures(file_path).and_then(|caps| {
+        let capture = caps.get(1).map_or("", |m| m.as_str());
+        if !capture.contains('.') {
+            None
+        } else {
+            Some(capture)
         }
-        Some(capture)
-    } else {
-        // If no match, return an empty string
-        return None;
-    }
+    })
 }
 
-fn read_lines(file_name: &str) -> Vec<String> {
-    use std::fs::File;
-    use std::io::{self, BufRead};
-    let file = File::open(file_name).expect("Unable to open file");
-    let reader = io::BufReader::new(file);
-    reader
-        .lines()
-        .map(|line| line.expect("Unable to read line"))
-        .collect()
+fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+where
+    P: AsRef<Path>,
+{
+    let file = File::open(filename)?;
+    Ok(io::BufReader::new(file).lines())
 }
