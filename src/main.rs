@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use walkdir::WalkDir;
 
-// Use OnceLock for the compiled regex pattern to avoid recompilation
+// use oncelock for the compiled regex pattern to avoid recompilation
 static FILE_NAME_REGEX: OnceLock<Regex> = OnceLock::new();
 
 fn get_filename_regex() -> &'static Regex {
@@ -16,7 +16,7 @@ fn get_filename_regex() -> &'static Regex {
 }
 
 fn main() {
-    // Define command line interface
+    // define command line interface
     let matches = Command::new("rust_duplicate_files")
         .version("1.0")
         .author("majdap")
@@ -39,10 +39,10 @@ fn main() {
         )
         .get_matches();
 
-    // Get the directory path to search
+    // get the directory path to search
     let path = matches.get_one::<PathBuf>("path").unwrap();
 
-    // Process ignore file if provided
+    // process ignore file if provided
     let ignored_file_names =
         if let Some(ignore_file) = matches.get_one::<PathBuf>("ignore-from-file") {
             println!("Loading ignore patterns from: {}", ignore_file.display());
@@ -58,10 +58,10 @@ fn main() {
             Vec::new()
         };
 
-    // Find and analyze files
+    // find and analyze files
     let duplicate_files = find_duplicate_files(path, &ignored_file_names);
 
-    // Print results
+    // print results
     print_duplicates(&duplicate_files);
 }
 
@@ -71,17 +71,17 @@ fn find_duplicate_files(
 ) -> HashMap<String, Vec<String>> {
     let mut files_hash: HashMap<String, Vec<String>> = HashMap::new();
 
-    // Walk the directory tree
+    // walk the directory tree
     for file in WalkDir::new(path)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())
     {
-        // Only process files, not directories
+        // only process files, not directories
 
         let file_path = file.path().to_string_lossy().to_string();
 
-        // Skip if the file path is in the ignore list
+        // skip if the file path is in the ignore list
         if ignored_file_names
             .iter()
             .any(|pattern| file_path.contains(pattern))
@@ -90,7 +90,7 @@ fn find_duplicate_files(
         }
 
         if let Some(file_name) = parse_file_name(&file_path) {
-            // Skip default files if ignore_defaults is true
+            // skip default files if ignore_defaults is true
 
             files_hash
                 .entry(file_name.to_string())
@@ -99,7 +99,7 @@ fn find_duplicate_files(
         }
     }
 
-    // Filter out entries with only one file (not duplicates)
+    // filter out entries with only one file (not duplicates)
     files_hash.retain(|_, paths| paths.len() > 1);
 
     files_hash
