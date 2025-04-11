@@ -2,6 +2,13 @@
 name = "rust_duplicate_files"
 version = "0.1.0"
 edition = "2021"
+authors = ["majdap"]
+description = "Recursive Duplicate Filename finder in Rust"
+license = "GPL-3.0"
+repository = "https://github.com/majdap/rust-find-duplicate-files"
+keywords = ["duplicate", "files", "finder", "utility"]
+categories = ["command-line-utilities", "filesystem"]
+readme = "README.md"
 
 [dependencies]
 walkdir = "2"
